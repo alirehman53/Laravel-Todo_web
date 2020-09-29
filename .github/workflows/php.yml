@@ -1,30 +1,36 @@
-name: CI-CD # Give your workflow a name
+name: PR WorkFlow
 
-on: push # Run the workflow for each push event (i.e commit)
+on:
+  pull_request:
+    branches:
+      - master
+      - staging
 
 jobs:
-  build-js:
-    name: Build Js/Css
+  app-tests:
     runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:5.7
+        env:
+          MYSQL_ALLOW_EMPTY_PASSWORD: yes
+          MYSQL_DATABASE: project1
+        ports:
+          - 3306
+        options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=3
     steps:
       - uses: actions/checkout@v1
-        # Build JS
-  test-php:
-      name: Test/Lint PHP
-      runs-on: ubuntu-latest
-      steps:
-      - uses: actions/checkout@v1
-        # Test and Lint PHP code
-  deploy:
-    name: Deploy to Production
-    runs-on: ubuntu-latest
-    # Note that this needs both of the other steps to have completed successfully
-    needs: [build-js, test-php] 
-    steps:
-    - uses: actions/checkout@v1
-      # Deploy Code 
-    - name: Install Surge
-      run: npm install --global surge
-      
-    - name: Run surge
-      run: surge ./build aliLaravelTodo.surge.sh --token  ${{ secrets.SURGE_TOKEN }}
+      - name: Copy .env
+        run: php -r "file_exists('.env') || copy('.env.example', '.env');"
+      - name: Install Composer Dependencies
+        run: composer install -q --no-ansi --no-interaction --no-scripts --no-suggest --no-progress --prefer-dist
+      - name: Install NPM Dependencies
+        run: npm install
+      - name: Generate key
+        run: php artisan key:generate
+      - name: Execute tests (Unit and Feature tests) using PHPUnit
+        env:
+          DB_PORT: ${{ job.services.mysql.ports[3306] }}
+        run: ./vendor/bin/phpunit
+      - name: Execute tests (Unit and Feature tests) using JEST
+        run: node_modules/.bin/jest
